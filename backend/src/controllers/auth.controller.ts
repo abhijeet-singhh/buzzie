@@ -75,7 +75,7 @@ export const logoutController = asyncHandler(
 );
 
 export const authStatusController = asyncHandler(
-  async (req: Request, res: Response) => {
+  async (req: Express.Request, res: Response) => {
     if (!req.user) {
       throw new UnauthorizedException("User not authenticated");
     }

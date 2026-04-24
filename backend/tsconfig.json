@@ -7,8 +7,11 @@
     "strict": true,
     "esModuleInterop": true,
     "skipLibCheck": true,
-    "types": ["node"]
+    "typeRoots": ["./src/@types", "./node_modules/@types"]
   },
   "include": ["src"],
-  "exclude": ["node_modules", "dist", "test"]
+  "exclude": ["node_modules", "dist", "test"],
+  "ts-node": {
+    "files": true
+  }
 }
