@@ -4,6 +4,10 @@ export interface ChatDocument extends Document {
   participants: mongoose.Types.ObjectId[];
   lastMessage?: mongoose.Types.ObjectId | null;
   lastMessageAt: Date;
+  lastReadBy: {
+    user: mongoose.Types.ObjectId;
+    lastReadAt: Date;
+  }[];
   isGroup: boolean;
   groupName?: string | null;
   groupAvatar?: string | null;
@@ -18,6 +22,7 @@ const chatSchema = new Schema<ChatDocument>(
     participants: {
       type: [{ type: Schema.Types.ObjectId, ref: "User" }],
       required: true,
+      default: [],
       validate: {
         validator: function (val: mongoose.Types.ObjectId[]) {
           return val.length >= 2;
@@ -32,8 +37,21 @@ const chatSchema = new Schema<ChatDocument>(
     },
     lastMessageAt: {
       type: Date,
-      default: () => new Date(),
+      default: Date.now,
     },
+    lastReadBy: [
+      {
+        user: {
+          type: Schema.Types.ObjectId,
+          ref: "User",
+          required: true,
+        },
+        lastReadAt: {
+          type: Date,
+          default: Date.now,
+        },
+      },
+    ],
     isGroup: {
       type: Boolean,
       default: false,
@@ -51,9 +69,9 @@ const chatSchema = new Schema<ChatDocument>(
       type: String,
       default: null,
     },
-    //TODO: When creating group set creator as admin
     admins: {
       type: [{ type: Schema.Types.ObjectId, ref: "User" }],
+      default: [],
       validate: {
         validator: function (
           this: ChatDocument,
@@ -79,14 +97,23 @@ const chatSchema = new Schema<ChatDocument>(
   },
 );
 
+chatSchema.pre("save", function () {
+  if (!this.isGroup && this.participants?.length) {
+    const uniqueSorted = Array.from(
+      new Set(this.participants.map((p) => p.toString())),
+    )
+      .map((id) => new mongoose.Types.ObjectId(id))
+      .sort((a, b) => a.toString().localeCompare(b.toString()));
+
+    this.participants = uniqueSorted;
+  }
+});
+
 // TODO: After sending a message, update the chat with:
 // - lastMessage (set to the newly created message ID)
 // - lastMessageAt (set current timestamp for proper chat sorting)
 
 chatSchema.index({ participants: 1, lastMessageAt: -1 });
-
-// TODO: Ensure participants are sorted before saving a chat to guarantee consistent ordering,
-// so that the unique index correctly prevents duplicate 1-to-1 chats (e.g., [A, B] vs [B, A])
 
 chatSchema.index(
   { participants: 1 },

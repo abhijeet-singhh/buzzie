@@ -3,6 +3,7 @@ import ChatModel from "../models/chat.model";
 import UserModel from "../models/user.model";
 import { BadRequestException, NotFoundException } from "../utils/app-error";
 import MessageModel from "../models/message.model";
+import { emitChatUpdated, emitNewChatToParticipants } from "../lib/socket";
 
 // Helper: Convert string[] → sorted ObjectId[]
 const toSortedObjectIds = (ids: string[]) => {
@@ -60,6 +61,13 @@ export const createChatService = async (
         ],
       });
 
+      const populatedChat = await chat.populate("participants", "name avatar");
+      const participantIdStrings = populatedChat.participants.map((p: any) =>
+        p._id.toString(),
+      );
+
+      emitNewChatToParticipants(participantIdStrings, populatedChat);
+
       return chat;
     } catch (error: any) {
       // Handle race condition (duplicate key error)
@@ -101,7 +109,7 @@ export const createChatService = async (
       throw new BadRequestException("Group must have at least 3 members");
     }
 
-    const chat = await ChatModel.create({
+    let chat = await ChatModel.create({
       participants: allParticipants,
       isGroup: true,
       groupName,
@@ -112,6 +120,13 @@ export const createChatService = async (
         lastReadAt: new Date(),
       })),
     });
+
+    chat = await chat.populate("participants", "name avatar");
+    const participantIdStrings = chat.participants.map((p: any) =>
+      p._id.toString(),
+    );
+
+    emitNewChatToParticipants(participantIdStrings, chat);
 
     return chat;
   }
@@ -189,4 +204,139 @@ export const validateChatParticipant = async (
   });
   if (!chat) throw new BadRequestException("User not a participant in chat");
   return chat;
+};
+
+async function assertGroupAdmin(
+  chat: any,
+  userId: string,
+): Promise<void> {
+  if (!chat.isGroup) throw new BadRequestException("Not a group chat");
+  const userObjectId = new mongoose.Types.ObjectId(userId);
+  const isAdmin = chat.admins?.some((a: any) => a.toString() === userId);
+  const isCreator = chat.createdBy.toString() === userId;
+  if (!isAdmin && !isCreator) {
+    throw new BadRequestException("Only admins can perform this action");
+  }
+}
+
+export const addMemberToGroupService = async (
+  chatId: string,
+  userId: string,
+  targetUserId: string,
+) => {
+  const chatObjectId = new mongoose.Types.ObjectId(chatId);
+  const userObjectId = new mongoose.Types.ObjectId(userId);
+  const targetObjectId = new mongoose.Types.ObjectId(targetUserId);
+
+  const chat = await ChatModel.findById(chatObjectId);
+  if (!chat) throw new NotFoundException("Chat not found");
+  await assertGroupAdmin(chat, userId);
+
+  const isAlreadyMember = chat.participants.some(
+    (p) => p.toString() === targetUserId,
+  );
+  if (isAlreadyMember) {
+    throw new BadRequestException("User is already a member");
+  }
+
+  chat.participants.push(targetObjectId);
+  chat.lastReadBy.push({ user: targetObjectId, lastReadAt: new Date() });
+  await chat.save();
+
+  const updatedChat = await ChatModel.findById(chatObjectId)
+    .populate("participants", "name avatar isOnline lastSeen")
+    .populate("lastMessage")
+    .lean();
+
+  if (!updatedChat) throw new NotFoundException("Chat not found after update");
+  emitChatUpdated(updatedChat);
+
+  return updatedChat;
+};
+
+export const removeMemberFromGroupService = async (
+  chatId: string,
+  userId: string,
+  targetUserId: string,
+) => {
+  const chatObjectId = new mongoose.Types.ObjectId(chatId);
+
+  const chat = await ChatModel.findById(chatObjectId);
+  if (!chat) throw new NotFoundException("Chat not found");
+  await assertGroupAdmin(chat, userId);
+
+  if (targetUserId === userId) {
+    throw new BadRequestException("Use leave endpoint to remove yourself");
+  }
+
+  chat.participants = chat.participants.filter(
+    (p) => p.toString() !== targetUserId,
+  );
+  chat.admins = (chat.admins || []).filter(
+    (a) => a.toString() !== targetUserId,
+  );
+  chat.lastReadBy = chat.lastReadBy.filter(
+    (lrb) => lrb.user.toString() !== targetUserId,
+  );
+  await chat.save();
+
+  const updatedChat = await ChatModel.findById(chatObjectId)
+    .populate("participants", "name avatar isOnline lastSeen")
+    .populate("lastMessage")
+    .lean();
+
+  if (!updatedChat) throw new NotFoundException("Chat not found after update");
+  emitChatUpdated(updatedChat);
+
+  return updatedChat;
+};
+
+export const updateGroupNameService = async (
+  chatId: string,
+  userId: string,
+  groupName: string,
+) => {
+  const chatObjectId = new mongoose.Types.ObjectId(chatId);
+
+  const chat = await ChatModel.findById(chatObjectId);
+  if (!chat) throw new NotFoundException("Chat not found");
+  await assertGroupAdmin(chat, userId);
+
+  chat.groupName = groupName;
+  await chat.save();
+
+  const updatedChat = await ChatModel.findById(chatObjectId)
+    .populate("participants", "name avatar isOnline lastSeen")
+    .populate("lastMessage")
+    .lean();
+
+  if (!updatedChat) throw new NotFoundException("Chat not found after update");
+  emitChatUpdated(updatedChat);
+
+  return updatedChat;
+};
+
+export const updateGroupAvatarService = async (
+  chatId: string,
+  userId: string,
+  groupAvatar: string,
+) => {
+  const chatObjectId = new mongoose.Types.ObjectId(chatId);
+
+  const chat = await ChatModel.findById(chatObjectId);
+  if (!chat) throw new NotFoundException("Chat not found");
+  await assertGroupAdmin(chat, userId);
+
+  chat.groupAvatar = groupAvatar;
+  await chat.save();
+
+  const updatedChat = await ChatModel.findById(chatObjectId)
+    .populate("participants", "name avatar isOnline lastSeen")
+    .populate("lastMessage")
+    .lean();
+
+  if (!updatedChat) throw new NotFoundException("Chat not found after update");
+  emitChatUpdated(updatedChat);
+
+  return updatedChat;
 };

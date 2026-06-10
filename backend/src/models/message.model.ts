@@ -86,7 +86,7 @@ messageSchema.pre("validate", function () {
 });
 
 // Core query: paginate messages in a chat by time
-messageSchema.index({ chatId: 1, isDeleted: 1, createdAt: -1 });
+messageSchema.index({ chatId: 1, isDeleted: 1, createdAt: -1, replyTo: 1 });
 // For unread count queries: "how many messages in chat X haven't been read by user Y"
 messageSchema.index({ chatId: 1, sender: 1 });
 

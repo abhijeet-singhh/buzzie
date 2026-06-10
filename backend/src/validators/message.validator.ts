@@ -30,3 +30,8 @@ export const getMessagesQuerySchema = z.object({
 export const markAsReadSchema = z.object({
   chatId: z.string().trim().min(1),
 });
+
+export const deleteMessageSchema = z.object({
+  chatId: z.string().trim().min(1),
+  messageId: z.string().trim().min(1),
+});

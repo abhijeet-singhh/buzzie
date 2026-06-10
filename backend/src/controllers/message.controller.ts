@@ -1,11 +1,13 @@
 import { Request, Response } from "express";
 import { asyncHandler } from "../middlewares/asyncHandler.middleware";
 import {
+  deleteMessageSchema,
   markAsReadSchema,
   sendMessageSchema,
 } from "../validators/message.validator";
 import { HTTPSTATUS } from "../config/http.config";
 import {
+  deleteMessageService,
   markAsReadService,
   sendMessageService,
 } from "../services/message.service";
@@ -72,6 +74,24 @@ export const markAsReadController = asyncHandler(
 
     return res.status(HTTPSTATUS.OK).json({
       message: "Messages marked as read",
+    });
+  },
+);
+
+export const deleteMessageController = asyncHandler(
+  async (req: Request, res: Response) => {
+    const userId = req.user?._id;
+
+    if (!userId) {
+      throw new UnauthorizedException("User not authenticated");
+    }
+
+    const { chatId, messageId } = deleteMessageSchema.parse(req.params);
+
+    await deleteMessageService(userId.toString(), chatId, messageId);
+
+    return res.status(HTTPSTATUS.OK).json({
+      message: "Message deleted successfully",
     });
   },
 );

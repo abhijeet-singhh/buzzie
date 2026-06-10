@@ -25,3 +25,15 @@ export const createChatSchema = z.union([singleChatSchema, groupChatSchema]);
 export const chatIdSchema = z.object({
   id: z.string().trim().min(1),
 });
+
+export const memberActionBodySchema = z.object({
+  userId: z.string().trim().min(1),
+});
+
+export const updateGroupNameBodySchema = z.object({
+  groupName: z.string().trim().min(1),
+});
+
+export const updateGroupAvatarBodySchema = z.object({
+  groupAvatar: z.string().trim().min(1),
+});

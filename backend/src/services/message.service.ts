@@ -3,6 +3,12 @@ import cloudinary from "../config/cloudinary.config";
 import ChatModel from "../models/chat.model";
 import MessageModel from "../models/message.model";
 import { BadRequestException, NotFoundException } from "../utils/app-error";
+import {
+  emitLastMessageToParticipants,
+  emitMessageDeleted,
+  emitMessageRead,
+  emitNewMessageToChatRoom,
+} from "../lib/socket";
 
 // Response type
 type SendMessageResponse = {
@@ -94,6 +100,13 @@ export const sendMessageService = async (
     },
   ]);
 
+  // websocket emit the new message to the chat room
+  emitNewMessageToChatRoom(chatId, newMessage);
+
+  // websocket emit the last message to members (personal room user)
+  const allParticipantIds = chat.participants.map((id) => id.toString());
+  emitLastMessageToParticipants(allParticipantIds, chatId, newMessage);
+
   // RETURN RESPONSE
   return {
     message: newMessage,
@@ -172,6 +185,8 @@ export const markAsReadService = async (userId: string, chatId: string) => {
     throw new BadRequestException("Unauthorized or chat not found");
   }
 
+  const lastReadAt = new Date();
+
   await ChatModel.updateOne(
     {
       _id: chatObjectId,
@@ -179,10 +194,40 @@ export const markAsReadService = async (userId: string, chatId: string) => {
     },
     {
       $set: {
-        "lastReadBy.$.lastReadAt": new Date(),
+        "lastReadBy.$.lastReadAt": lastReadAt,
       },
     },
   );
+
+  emitMessageRead(chatId, userId, lastReadAt);
+
+  return { success: true, lastReadAt };
+};
+
+export const deleteMessageService = async (
+  userId: string,
+  chatId: string,
+  messageId: string,
+) => {
+  const userObjectId = new mongoose.Types.ObjectId(userId);
+  const chatObjectId = new mongoose.Types.ObjectId(chatId);
+  const messageObjectId = new mongoose.Types.ObjectId(messageId);
+
+  const message = await MessageModel.findOne({
+    _id: messageObjectId,
+    chatId: chatObjectId,
+    sender: userObjectId,
+    isDeleted: false,
+  });
+
+  if (!message) {
+    throw new NotFoundException("Message not found or unauthorized");
+  }
+
+  message.isDeleted = true;
+  await message.save();
+
+  emitMessageDeleted(chatId, messageId);
 
   return { success: true };
 };

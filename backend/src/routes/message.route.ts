@@ -1,6 +1,7 @@
 import { Router } from "express";
 import { passportAuthenticateJwt } from "../config/passport.config";
 import {
+  deleteMessageController,
   getMessagesController,
   markAsReadController,
   sendMessageController,
@@ -15,5 +16,7 @@ messageRoutes.post("/", sendMessageController);
 messageRoutes.get("/", getMessagesController);
 
 messageRoutes.patch("/:chatId/read", markAsReadController);
+
+messageRoutes.delete("/:chatId/:messageId", deleteMessageController);
 
 export default messageRoutes;

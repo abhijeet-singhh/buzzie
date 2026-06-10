@@ -1,11 +1,21 @@
 import { Request, Response } from "express";
 import { asyncHandler } from "../middlewares/asyncHandler.middleware";
 import { HTTPSTATUS } from "../config/http.config";
-import { chatIdSchema, createChatSchema } from "../validators/chat.validator";
 import {
+  chatIdSchema,
+  createChatSchema,
+  memberActionBodySchema,
+  updateGroupAvatarBodySchema,
+  updateGroupNameBodySchema,
+} from "../validators/chat.validator";
+import {
+  addMemberToGroupService,
   createChatService,
   getSingleChatService,
   getUserChatsService,
+  removeMemberFromGroupService,
+  updateGroupAvatarService,
+  updateGroupNameService,
 } from "../services/chat.service";
 import { UnauthorizedException } from "../utils/app-error";
 
@@ -17,10 +27,8 @@ export const createChatController = asyncHandler(
       throw new UnauthorizedException("User not authenticated");
     }
 
-    // convert ObjectId → string
     const userIdStr = userId.toString();
 
-    // validate request body
     const body = createChatSchema.parse(req.body);
 
     const chat = await createChatService(userIdStr, body);
@@ -61,7 +69,6 @@ export const getSingleChatController = asyncHandler(
 
     const userIdStr = userId.toString();
 
-    // validate params
     const { id } = chatIdSchema.parse(req.params);
 
     const { chat, messages } = await getSingleChatService(id, userIdStr);
@@ -70,6 +77,86 @@ export const getSingleChatController = asyncHandler(
       message: "Chat retrieved successfully",
       chat,
       messages,
+    });
+  },
+);
+
+export const addMemberController = asyncHandler(
+  async (req: Request, res: Response) => {
+    const userId = req.user?._id;
+    if (!userId) throw new UnauthorizedException("User not authenticated");
+
+    const { id } = chatIdSchema.parse(req.params);
+    const { userId: targetUserId } = memberActionBodySchema.parse(req.body);
+
+    const chat = await addMemberToGroupService(
+      id,
+      userId.toString(),
+      targetUserId,
+    );
+
+    return res.status(HTTPSTATUS.OK).json({
+      message: "Member added successfully",
+      chat,
+    });
+  },
+);
+
+export const removeMemberController = asyncHandler(
+  async (req: Request, res: Response) => {
+    const userId = req.user?._id;
+    if (!userId) throw new UnauthorizedException("User not authenticated");
+
+    const { id } = chatIdSchema.parse(req.params);
+    const { userId: targetUserId } = memberActionBodySchema.parse(req.body);
+
+    const chat = await removeMemberFromGroupService(
+      id,
+      userId.toString(),
+      targetUserId,
+    );
+
+    return res.status(HTTPSTATUS.OK).json({
+      message: "Member removed successfully",
+      chat,
+    });
+  },
+);
+
+export const updateGroupNameController = asyncHandler(
+  async (req: Request, res: Response) => {
+    const userId = req.user?._id;
+    if (!userId) throw new UnauthorizedException("User not authenticated");
+
+    const { id } = chatIdSchema.parse(req.params);
+    const { groupName } = updateGroupNameBodySchema.parse(req.body);
+
+    const chat = await updateGroupNameService(id, userId.toString(), groupName);
+
+    return res.status(HTTPSTATUS.OK).json({
+      message: "Group name updated successfully",
+      chat,
+    });
+  },
+);
+
+export const updateGroupAvatarController = asyncHandler(
+  async (req: Request, res: Response) => {
+    const userId = req.user?._id;
+    if (!userId) throw new UnauthorizedException("User not authenticated");
+
+    const { id } = chatIdSchema.parse(req.params);
+    const { groupAvatar } = updateGroupAvatarBodySchema.parse(req.body);
+
+    const chat = await updateGroupAvatarService(
+      id,
+      userId.toString(),
+      groupAvatar,
+    );
+
+    return res.status(HTTPSTATUS.OK).json({
+      message: "Group avatar updated successfully",
+      chat,
     });
   },
 );
