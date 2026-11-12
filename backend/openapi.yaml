@@ -1,0 +1,1091 @@
+openapi: 3.0.3
+info:
+  title: Buzzie Chat API
+  version: 1.0.0
+  description: |
+    REST API for the Buzzie chat application. Authentication uses an
+    httpOnly `accessToken` cookie set by register/login.
+
+    Media messages accept either an `http(s)` URL or a base64 data URI.
+    Images are limited to 4 MB; audio, video, and files to 6 MB. The JSON
+    body limit is 10 MB.
+servers:
+  - url: http://localhost:8000
+    description: Local development
+tags:
+  - name: Health
+  - name: Auth
+  - name: Users
+  - name: Chats
+  - name: Messages
+
+security:
+  - cookieAuth: []
+
+paths:
+  /health:
+    get:
+      tags: [Health]
+      summary: Readiness check
+      security: []
+      responses:
+        "200":
+          description: Mongo and Redis are ready
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/HealthResponse"
+        "503":
+          description: One or more dependencies are unavailable
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/HealthResponse"
+
+  /api/v1/auth/register:
+    post:
+      tags: [Auth]
+      summary: Register and log in
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RegisterRequest"
+      responses:
+        "201":
+          description: User created and auth cookie set
+          headers:
+            Set-Cookie:
+              schema:
+                type: string
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AuthResponse"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+
+  /api/v1/auth/login:
+    post:
+      tags: [Auth]
+      summary: Log in
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/LoginRequest"
+      responses:
+        "200":
+          description: Auth cookie set
+          headers:
+            Set-Cookie:
+              schema:
+                type: string
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AuthResponse"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+
+  /api/v1/auth/logout:
+    post:
+      tags: [Auth]
+      summary: Clear auth cookie
+      responses:
+        "200":
+          description: Logged out
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+
+  /api/v1/auth/status:
+    get:
+      tags: [Auth]
+      summary: Current authenticated user
+      responses:
+        "200":
+          description: Authenticated user
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AuthResponse"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+
+  /api/v1/users:
+    get:
+      tags: [Users]
+      summary: List users, excluding the current user
+      parameters:
+        - $ref: "#/components/parameters/Page"
+        - $ref: "#/components/parameters/Limit"
+        - name: search
+          in: query
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Paginated users
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+                  users:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/UserSummary"
+                  pagination:
+                    $ref: "#/components/schemas/Pagination"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+
+  /api/v1/users/presence:
+    get:
+      tags: [Users]
+      summary: Presence snapshot for up to 50 users
+      parameters:
+        - name: ids
+          in: query
+          required: true
+          description: Comma-separated user ids
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Presence data
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+                  presences:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/Presence"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+
+  /api/v1/users/me:
+    patch:
+      tags: [Users]
+      summary: Update the current user's profile
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              properties:
+                name:
+                  type: string
+                  minLength: 2
+                  maxLength: 50
+                  pattern: "^[a-zA-Z\\s]+$"
+                avatar:
+                  type: string
+                  format: uri
+                  nullable: true
+              minProperties: 1
+      responses:
+        "200":
+          description: Updated user
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+                  data:
+                    $ref: "#/components/schemas/UserSummary"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+
+  /api/v1/chats:
+    post:
+      tags: [Chats]
+      summary: Create a 1:1 chat or a group chat
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              oneOf:
+                - type: object
+                  required: [participantId]
+                  properties:
+                    participantId:
+                      type: string
+                      pattern: "^[0-9a-fA-F]{24}$"
+                - type: object
+                  required: [isGroup, participants, groupName]
+                  properties:
+                    isGroup:
+                      type: boolean
+                      enum: [true]
+                    participants:
+                      type: array
+                      minItems: 2
+                      uniqueItems: true
+                      items:
+                        type: string
+                        pattern: "^[0-9a-fA-F]{24}$"
+                    groupName:
+                      type: string
+                      minLength: 1
+      responses:
+        "201":
+          description: Chat created or returned
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+                  chat:
+                    $ref: "#/components/schemas/Chat"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+    get:
+      tags: [Chats]
+      summary: List the current user's chats
+      parameters:
+        - $ref: "#/components/parameters/Page"
+        - $ref: "#/components/parameters/Limit"
+      responses:
+        "200":
+          description: Paginated chats with unread counts
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+                  chats:
+                    type: array
+                    items:
+                      allOf:
+                        - $ref: "#/components/schemas/Chat"
+                        - type: object
+                          properties:
+                            unreadCount:
+                              type: integer
+                  pagination:
+                    $ref: "#/components/schemas/Pagination"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+
+  /api/v1/chats/{id}:
+    get:
+      tags: [Chats]
+      summary: Get a chat and its latest 50 messages
+      parameters:
+        - $ref: "#/components/parameters/ChatId"
+      responses:
+        "200":
+          description: Chat with messages
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+                  chat:
+                    $ref: "#/components/schemas/Chat"
+                  messages:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/Message"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /api/v1/chats/{id}/members/add:
+    patch:
+      tags: [Chats]
+      summary: Add a member to a group (admin only)
+      parameters:
+        - $ref: "#/components/parameters/ChatId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/MemberAction"
+      responses:
+        "200":
+          description: Updated chat
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+                  chat:
+                    $ref: "#/components/schemas/Chat"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /api/v1/chats/{id}/members/remove:
+    patch:
+      tags: [Chats]
+      summary: Remove a member from a group (admin only)
+      parameters:
+        - $ref: "#/components/parameters/ChatId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/MemberAction"
+      responses:
+        "200":
+          description: Updated chat
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+                  chat:
+                    $ref: "#/components/schemas/Chat"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /api/v1/chats/{id}/members/me:
+    delete:
+      tags: [Chats]
+      summary: Leave a group chat
+      parameters:
+        - $ref: "#/components/parameters/ChatId"
+      responses:
+        "200":
+          description: Left the group
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /api/v1/chats/{id}/group-name:
+    patch:
+      tags: [Chats]
+      summary: Update a group name (admin only)
+      parameters:
+        - $ref: "#/components/parameters/ChatId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [groupName]
+              properties:
+                groupName:
+                  type: string
+                  minLength: 1
+      responses:
+        "200":
+          description: Updated chat
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+                  chat:
+                    $ref: "#/components/schemas/Chat"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+
+  /api/v1/chats/{id}/group-avatar:
+    patch:
+      tags: [Chats]
+      summary: Update a group avatar (admin only)
+      parameters:
+        - $ref: "#/components/parameters/ChatId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [groupAvatar]
+              properties:
+                groupAvatar:
+                  type: string
+                  minLength: 1
+      responses:
+        "200":
+          description: Updated chat
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+                  chat:
+                    $ref: "#/components/schemas/Chat"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+
+  /api/v1/messages:
+    post:
+      tags: [Messages]
+      summary: Send a text or media message
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              oneOf:
+                - type: object
+                  required: [chatId, messageType, content]
+                  properties:
+                    chatId:
+                      type: string
+                      pattern: "^[0-9a-fA-F]{24}$"
+                    messageType:
+                      type: string
+                      enum: [text]
+                    content:
+                      type: string
+                      minLength: 1
+                    replyToId:
+                      type: string
+                      pattern: "^[0-9a-fA-F]{24}$"
+                - type: object
+                  required: [chatId, messageType, mediaUrl]
+                  properties:
+                    chatId:
+                      type: string
+                      pattern: "^[0-9a-fA-F]{24}$"
+                    messageType:
+                      type: string
+                      enum: [image, audio, video, file]
+                    mediaUrl:
+                      type: string
+                      description: http(s) URL or base64 data URI within the size limit
+                    replyToId:
+                      type: string
+                      pattern: "^[0-9a-fA-F]{24}$"
+      responses:
+        "201":
+          description: Message sent
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+                  messageData:
+                    $ref: "#/components/schemas/Message"
+                  chat:
+                    $ref: "#/components/schemas/Chat"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
+    get:
+      tags: [Messages]
+      summary: List messages with cursor or since pagination
+      parameters:
+        - $ref: "#/components/parameters/ChatIdQuery"
+        - name: cursor
+          in: query
+          schema:
+            type: string
+            pattern: "^[0-9a-fA-F]{24}$"
+        - name: since
+          in: query
+          schema:
+            type: string
+            format: date-time
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 100
+            default: 20
+      responses:
+        "200":
+          description: Messages
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+                  messages:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/Message"
+                  nextCursor:
+                    type: string
+                    nullable: true
+                  nextSince:
+                    type: string
+                    format: date-time
+                    nullable: true
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+
+  /api/v1/messages/search:
+    get:
+      tags: [Messages]
+      summary: Full-text search across one chat or all user chats
+      parameters:
+        - name: q
+          in: query
+          required: true
+          schema:
+            type: string
+            minLength: 1
+            maxLength: 100
+        - name: chatId
+          in: query
+          schema:
+            type: string
+            pattern: "^[0-9a-fA-F]{24}$"
+        - $ref: "#/components/parameters/Page"
+        - $ref: "#/components/parameters/Limit"
+      responses:
+        "200":
+          description: Search results
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+                  messages:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/Message"
+                  pagination:
+                    $ref: "#/components/schemas/Pagination"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+
+  /api/v1/messages/pinned:
+    get:
+      tags: [Messages]
+      summary: List pinned messages in a chat
+      parameters:
+        - $ref: "#/components/parameters/ChatIdQuery"
+        - $ref: "#/components/parameters/Page"
+        - $ref: "#/components/parameters/Limit"
+      responses:
+        "200":
+          description: Pinned messages
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+                  messages:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/Message"
+                  pagination:
+                    $ref: "#/components/schemas/Pagination"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+
+  /api/v1/messages/{chatId}/read:
+    patch:
+      tags: [Messages]
+      summary: Mark a chat as read
+      parameters:
+        - $ref: "#/components/parameters/ChatIdParam"
+      responses:
+        "200":
+          description: Read watermark updated
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+                  lastReadAt:
+                    type: string
+                    format: date-time
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+
+  /api/v1/messages/{chatId}/{messageId}/pin:
+    patch:
+      tags: [Messages]
+      summary: Pin or unpin a message
+      parameters:
+        - $ref: "#/components/parameters/ChatIdParam"
+        - $ref: "#/components/parameters/MessageId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [pinned]
+              properties:
+                pinned:
+                  type: boolean
+      responses:
+        "200":
+          description: Updated message
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+                  messageData:
+                    $ref: "#/components/schemas/Message"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /api/v1/messages/{chatId}/{messageId}:
+    patch:
+      tags: [Messages]
+      summary: Edit a text message (sender only)
+      parameters:
+        - $ref: "#/components/parameters/ChatIdParam"
+        - $ref: "#/components/parameters/MessageId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [content]
+              properties:
+                content:
+                  type: string
+                  minLength: 1
+                  maxLength: 4000
+      responses:
+        "200":
+          description: Updated message
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+                  messageData:
+                    $ref: "#/components/schemas/Message"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+    delete:
+      tags: [Messages]
+      summary: Soft-delete a message (sender only)
+      parameters:
+        - $ref: "#/components/parameters/ChatIdParam"
+        - $ref: "#/components/parameters/MessageId"
+      responses:
+        "200":
+          description: Message deleted
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+components:
+  securitySchemes:
+    cookieAuth:
+      type: apiKey
+      in: cookie
+      name: accessToken
+
+  parameters:
+    Page:
+      name: page
+      in: query
+      schema:
+        type: integer
+        minimum: 1
+        default: 1
+    Limit:
+      name: limit
+      in: query
+      schema:
+        type: integer
+        minimum: 1
+        maximum: 50
+        default: 20
+    ChatId:
+      name: id
+      in: path
+      required: true
+      schema:
+        type: string
+        pattern: "^[0-9a-fA-F]{24}$"
+    ChatIdParam:
+      name: chatId
+      in: path
+      required: true
+      schema:
+        type: string
+        pattern: "^[0-9a-fA-F]{24}$"
+    ChatIdQuery:
+      name: chatId
+      in: query
+      required: true
+      schema:
+        type: string
+        pattern: "^[0-9a-fA-F]{24}$"
+    MessageId:
+      name: messageId
+      in: path
+      required: true
+      schema:
+        type: string
+        pattern: "^[0-9a-fA-F]{24}$"
+
+  responses:
+    BadRequest:
+      description: Validation or request error
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ValidationError"
+    Unauthorized:
+      description: Missing or invalid authentication
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+    Forbidden:
+      description: Authenticated but not allowed
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+    NotFound:
+      description: Resource not found
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+    TooManyRequests:
+      description: Rate limit exceeded
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+
+  schemas:
+    RegisterRequest:
+      type: object
+      additionalProperties: false
+      required: [name, email, password]
+      properties:
+        name:
+          type: string
+          minLength: 2
+          maxLength: 50
+          pattern: "^[a-zA-Z\\s]+$"
+        email:
+          type: string
+          format: email
+        password:
+          type: string
+          minLength: 6
+          maxLength: 100
+        avatar:
+          type: string
+          format: uri
+    LoginRequest:
+      type: object
+      additionalProperties: false
+      required: [email, password]
+      properties:
+        email:
+          type: string
+          format: email
+        password:
+          type: string
+          minLength: 6
+          maxLength: 100
+    AuthResponse:
+      type: object
+      properties:
+        message:
+          type: string
+        data:
+          $ref: "#/components/schemas/UserSummary"
+    UserSummary:
+      type: object
+      properties:
+        _id:
+          type: string
+        name:
+          type: string
+        email:
+          type: string
+          format: email
+        avatar:
+          type: string
+          nullable: true
+        isOnline:
+          type: boolean
+        lastSeen:
+          type: string
+          format: date-time
+        createdAt:
+          type: string
+          format: date-time
+    Presence:
+      type: object
+      properties:
+        userId:
+          type: string
+        isOnline:
+          type: boolean
+        lastSeen:
+          type: string
+          format: date-time
+    Chat:
+      type: object
+      properties:
+        _id:
+          type: string
+        participants:
+          type: array
+          items:
+            $ref: "#/components/schemas/UserSummary"
+        lastMessage:
+          oneOf:
+            - $ref: "#/components/schemas/Message"
+            - type: string
+              nullable: true
+        lastMessageAt:
+          type: string
+          format: date-time
+        lastReadBy:
+          type: array
+          items:
+            type: object
+            properties:
+              user:
+                type: string
+              lastReadAt:
+                type: string
+                format: date-time
+        isGroup:
+          type: boolean
+        directKey:
+          type: string
+          nullable: true
+        groupName:
+          type: string
+          nullable: true
+        groupAvatar:
+          type: string
+          nullable: true
+        admins:
+          type: array
+          items:
+            type: string
+        createdBy:
+          type: string
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+    Message:
+      type: object
+      properties:
+        _id:
+          type: string
+        chatId:
+          type: string
+        sender:
+          oneOf:
+            - $ref: "#/components/schemas/UserSummary"
+            - type: string
+              nullable: true
+        messageType:
+          type: string
+          enum: [text, image, audio, video, file, system]
+        content:
+          type: string
+          nullable: true
+        mediaUrl:
+          type: string
+          nullable: true
+        replyTo:
+          oneOf:
+            - $ref: "#/components/schemas/Message"
+            - type: string
+              nullable: true
+        editedAt:
+          type: string
+          format: date-time
+          nullable: true
+        isPinned:
+          type: boolean
+        pinnedBy:
+          type: string
+          nullable: true
+        pinnedAt:
+          type: string
+          format: date-time
+          nullable: true
+        isDeleted:
+          type: boolean
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+    MemberAction:
+      type: object
+      additionalProperties: false
+      required: [userId]
+      properties:
+        userId:
+          type: string
+          pattern: "^[0-9a-fA-F]{24}$"
+    Pagination:
+      type: object
+      properties:
+        page:
+          type: integer
+        limit:
+          type: integer
+        total:
+          type: integer
+        totalPages:
+          type: integer
+    HealthResponse:
+      type: object
+      properties:
+        message:
+          type: string
+        status:
+          type: string
+          enum: [OK, UNAVAILABLE]
+        checks:
+          type: object
+          properties:
+            mongodb:
+              type: string
+              enum: [up, down]
+            redis:
+              type: string
+              enum: [up, down, not_configured]
+    Error:
+      type: object
+      properties:
+        message:
+          type: string
+        errorCode:
+          type: string
+    ValidationError:
+      allOf:
+        - $ref: "#/components/schemas/Error"
+        - type: object
+          properties:
+            issues:
+              type: array
+              items:
+                type: object
+                properties:
+                  path:
+                    type: string
+                  message:
+                    type: string
+                  code:
+                    type: string

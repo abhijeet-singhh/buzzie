@@ -1,0 +1,366 @@
+{
+  "info": {
+    "name": "Buzzie API",
+    "description": "REST collection for the Buzzie backend. Register or log in first; Postman stores the httpOnly accessToken cookie automatically.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    { "key": "baseUrl", "value": "http://localhost:8000" },
+    { "key": "userId", "value": "" },
+    { "key": "chatId", "value": "" },
+    { "key": "messageId", "value": "" }
+  ],
+  "item": [
+    {
+      "name": "Auth",
+      "item": [
+        {
+          "name": "Register",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "url": "{{baseUrl}}/api/v1/auth/register",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Alice Example\",\n  \"email\": \"alice@example.com\",\n  \"password\": \"Password123!\"\n}"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "const body = pm.response.json();",
+                  "if (body.data && body.data._id) pm.collectionVariables.set('userId', body.data._id);",
+                  "pm.test('registered', () => pm.response.to.have.status(201));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Login",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "url": "{{baseUrl}}/api/v1/auth/login",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"alice@example.com\",\n  \"password\": \"Password123!\"\n}"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "const body = pm.response.json();",
+                  "if (body.data && body.data._id) pm.collectionVariables.set('userId', body.data._id);",
+                  "pm.test('logged in', () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Status",
+          "request": { "method": "GET", "url": "{{baseUrl}}/api/v1/auth/status" }
+        },
+        {
+          "name": "Logout",
+          "request": { "method": "POST", "url": "{{baseUrl}}/api/v1/auth/logout" }
+        }
+      ]
+    },
+    {
+      "name": "Health",
+      "item": [
+        {
+          "name": "Readiness",
+          "request": { "method": "GET", "url": "{{baseUrl}}/health" }
+        }
+      ]
+    },
+    {
+      "name": "Users",
+      "item": [
+        {
+          "name": "List users",
+          "request": {
+            "method": "GET",
+            "url": "{{baseUrl}}/api/v1/users?search=&page=1&limit=20"
+          }
+        },
+        {
+          "name": "Presence snapshot",
+          "request": {
+            "method": "GET",
+            "url": "{{baseUrl}}/api/v1/users/presence?ids={{userId}}"
+          }
+        },
+        {
+          "name": "Update my profile",
+          "request": {
+            "method": "PATCH",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "url": "{{baseUrl}}/api/v1/users/me",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Alice Updated\",\n  \"avatar\": \"https://example.com/avatar.png\"\n}"
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Chats",
+      "item": [
+        {
+          "name": "Create direct chat",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "url": "{{baseUrl}}/api/v1/chats",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"participantId\": \"REPLACE_WITH_OTHER_USER_ID\"\n}"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "const body = pm.response.json();",
+                  "if (body.chat && body.chat._id) pm.collectionVariables.set('chatId', body.chat._id);",
+                  "pm.test('chat created', () => pm.response.to.have.status(201));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Create group chat",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "url": "{{baseUrl}}/api/v1/chats",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"isGroup\": true,\n  \"participants\": [\"REPLACE_USER_ID_1\", \"REPLACE_USER_ID_2\"],\n  \"groupName\": \"Project team\"\n}"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "const body = pm.response.json();",
+                  "if (body.chat && body.chat._id) pm.collectionVariables.set('chatId', body.chat._id);",
+                  "pm.test('group created', () => pm.response.to.have.status(201));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "List chats",
+          "request": {
+            "method": "GET",
+            "url": "{{baseUrl}}/api/v1/chats?page=1&limit=20"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "const body = pm.response.json();",
+                  "if (body.chats && body.chats[0]) pm.collectionVariables.set('chatId', body.chats[0]._id);",
+                  "pm.test('chats listed', () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Get chat",
+          "request": { "method": "GET", "url": "{{baseUrl}}/api/v1/chats/{{chatId}}" }
+        },
+        {
+          "name": "Add member",
+          "request": {
+            "method": "PATCH",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "url": "{{baseUrl}}/api/v1/chats/{{chatId}}/members/add",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"userId\": \"REPLACE_USER_ID\"\n}"
+            }
+          }
+        },
+        {
+          "name": "Remove member",
+          "request": {
+            "method": "PATCH",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "url": "{{baseUrl}}/api/v1/chats/{{chatId}}/members/remove",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"userId\": \"REPLACE_USER_ID\"\n}"
+            }
+          }
+        },
+        {
+          "name": "Leave group",
+          "request": {
+            "method": "DELETE",
+            "url": "{{baseUrl}}/api/v1/chats/{{chatId}}/members/me"
+          }
+        },
+        {
+          "name": "Update group name",
+          "request": {
+            "method": "PATCH",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "url": "{{baseUrl}}/api/v1/chats/{{chatId}}/group-name",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"groupName\": \"Renamed group\"\n}"
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Messages",
+      "item": [
+        {
+          "name": "Send text message",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "url": "{{baseUrl}}/api/v1/messages",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"chatId\": \"{{chatId}}\",\n  \"messageType\": \"text\",\n  \"content\": \"Hello from Postman\"\n}"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "const body = pm.response.json();",
+                  "if (body.messageData && body.messageData._id) pm.collectionVariables.set('messageId', body.messageData._id);",
+                  "pm.test('message sent', () => pm.response.to.have.status(201));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Send image message",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "url": "{{baseUrl}}/api/v1/messages",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"chatId\": \"{{chatId}}\",\n  \"messageType\": \"image\",\n  \"mediaUrl\": \"data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=\"\n}"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "const body = pm.response.json();",
+                  "if (body.messageData && body.messageData._id) pm.collectionVariables.set('messageId', body.messageData._id);",
+                  "pm.test('media message sent', () => pm.response.to.have.status(201));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "List messages",
+          "request": {
+            "method": "GET",
+            "url": "{{baseUrl}}/api/v1/messages?chatId={{chatId}}&limit=20"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "const body = pm.response.json();",
+                  "if (body.messages && body.messages[0]) pm.collectionVariables.set('messageId', body.messages[0]._id);",
+                  "pm.test('messages listed', () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Backfill since",
+          "request": {
+            "method": "GET",
+            "url": "{{baseUrl}}/api/v1/messages?chatId={{chatId}}&since=1970-01-01T00:00:00.000Z&limit=20"
+          }
+        },
+        {
+          "name": "Search messages",
+          "request": {
+            "method": "GET",
+            "url": "{{baseUrl}}/api/v1/messages/search?q=hello&chatId={{chatId}}&page=1&limit=20"
+          }
+        },
+        {
+          "name": "Pinned messages",
+          "request": {
+            "method": "GET",
+            "url": "{{baseUrl}}/api/v1/messages/pinned?chatId={{chatId}}&page=1&limit=20"
+          }
+        },
+        {
+          "name": "Mark read",
+          "request": {
+            "method": "PATCH",
+            "url": "{{baseUrl}}/api/v1/messages/{{chatId}}/read"
+          }
+        },
+        {
+          "name": "Pin message",
+          "request": {
+            "method": "PATCH",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "url": "{{baseUrl}}/api/v1/messages/{{chatId}}/{{messageId}}/pin",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"pinned\": true\n}"
+            }
+          }
+        },
+        {
+          "name": "Edit message",
+          "request": {
+            "method": "PATCH",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "url": "{{baseUrl}}/api/v1/messages/{{chatId}}/{{messageId}}",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"content\": \"Edited from Postman\"\n}"
+            }
+          }
+        },
+        {
+          "name": "Delete message",
+          "request": {
+            "method": "DELETE",
+            "url": "{{baseUrl}}/api/v1/messages/{{chatId}}/{{messageId}}"
+          }
+        }
+      ]
+    }
+  ]
+}
