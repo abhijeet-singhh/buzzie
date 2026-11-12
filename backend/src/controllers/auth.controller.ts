@@ -4,18 +4,14 @@ import { loginSchema, registerSchema } from "../validators/auth.validator";
 import { loginService, registerService } from "../services/auth.service";
 import { clearJwtAuthCookie, setJwtAuthCookie } from "../utils/cookie";
 import { HTTPSTATUS } from "../config/http.config";
-import { BadRequestException, UnauthorizedException } from "../utils/app-error";
+import { UnauthorizedException } from "../utils/app-error";
+import { validate } from "../utils/validate";
 
 export const registerController = asyncHandler(
   async (req: Request, res: Response) => {
-    const result = registerSchema.safeParse(req.body);
+    const body = validate(registerSchema, req.body);
 
-    if (!result.success) {
-      const message = result.error.issues.map((err) => err.message).join(", ");
-      throw new BadRequestException(message);
-    }
-
-    const user = await registerService(result.data);
+    const user = await registerService(body);
 
     const safeUser = {
       _id: user._id,
@@ -38,14 +34,9 @@ export const registerController = asyncHandler(
 
 export const loginController = asyncHandler(
   async (req: Request, res: Response) => {
-    const result = loginSchema.safeParse(req.body);
+    const body = validate(loginSchema, req.body);
 
-    if (!result.success) {
-      const message = result.error.issues.map((err) => err.message).join(", ");
-      throw new BadRequestException(message);
-    }
-
-    const user = await loginService(result.data);
+    const user = await loginService(body);
 
     const safeUser = {
       _id: user._id,

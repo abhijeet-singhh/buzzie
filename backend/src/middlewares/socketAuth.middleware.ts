@@ -38,7 +38,11 @@ export const socketAuthMiddleware = (
       return next(new Error("Unauthorized: No access token"));
     }
 
-    const decoded = jwt.verify(token, Env.JWT_SECRET) as { userId: string };
+    const decoded = jwt.verify(token, Env.JWT_SECRET, {
+      audience: "user",
+      issuer: "Buzzie",
+      algorithms: ["HS256"],
+    }) as { userId: string };
     if (!decoded?.userId) {
       return next(new Error("Unauthorized: Invalid token payload"));
     }

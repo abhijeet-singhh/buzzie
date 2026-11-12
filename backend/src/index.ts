@@ -1,64 +1,115 @@
 import "dotenv/config";
-import express, { Request, Response } from "express";
-import cookieParser from "cookie-parser";
-import cors from "cors";
-import helmet from "helmet";
 import http from "http";
-import passport from "passport";
 import { Env } from "./config/env.config";
-import { asyncHandler } from "./middlewares/asyncHandler.middleware";
-import { HTTPSTATUS } from "./config/http.config";
-import { errorHandler } from "./middlewares/errorHandler.middleware";
-import connectDatabase from "./config/database.config";
-import { initializeSocket } from "./lib/socket";
-import "./config/passport.config";
-import router from "./routes";
+import connectDatabase, { disconnectDatabase } from "./config/database.config";
+import { closeRedisClients } from "./config/redis.config";
+import { logger } from "./lib/logger";
+import { closeSocket, initializeSocket } from "./lib/socket";
+import { createApp } from "./app";
 
-const app = express();
+const app = createApp();
 const server = http.createServer(app);
 
-// socket
 initializeSocket(server);
 
-app.use(helmet());
-app.use(express.json({ limit: "10mb" }));
-app.use(express.urlencoded({ extended: true }));
-app.use(cookieParser());
+const SHUTDOWN_TIMEOUT_MS = 12000;
+const SHUTDOWN_STEP_TIMEOUT_MS = 2500;
+let isShuttingDown = false;
 
-app.use(
-  cors({
-    origin: [Env.FRONTEND_ORIGIN],
-    credentials: true,
-  }),
-);
+const withShutdownTimeout = <T>(
+  task: Promise<T>,
+  timeoutMs: number,
+  label: string,
+): Promise<T> => {
+  return new Promise<T>((resolve, reject) => {
+    const timer = setTimeout(
+      () => reject(new Error(`${label} timed out`)),
+      timeoutMs,
+    );
+    timer.unref();
 
-app.use(passport.initialize());
+    task.then(
+      (value) => {
+        clearTimeout(timer);
+        resolve(value);
+      },
+      (error) => {
+        clearTimeout(timer);
+        reject(error);
+      },
+    );
+  });
+};
 
-app.get(
-  "/health",
-  asyncHandler(async (_req: Request, res: Response) => {
-    res.status(HTTPSTATUS.OK).json({
-      message: "Server is healthy",
-      status: "OK",
-    });
-  }),
-);
+const shutdown = async (signal: NodeJS.Signals): Promise<void> => {
+  if (isShuttingDown) return;
+  isShuttingDown = true;
 
-app.use("/api/v1", router);
+  logger.info({ signal }, "Shutting down gracefully");
 
-app.use(errorHandler);
+  const forceExitTimer = setTimeout(() => {
+    logger.error("Graceful shutdown timed out, forcing exit");
+    process.exit(1);
+  }, SHUTDOWN_TIMEOUT_MS);
+  forceExitTimer.unref();
+
+  const steps: Array<[string, () => Promise<void>]> = [
+    ["socket", closeSocket],
+    [
+      "http",
+      async () => {
+        if (server.listening) {
+          await new Promise<void>((resolve) => {
+            server.close(() => resolve());
+          });
+        }
+      },
+    ],
+    ["database", disconnectDatabase],
+    ["redis", closeRedisClients],
+  ];
+
+  for (const [label, task] of steps) {
+    try {
+      await withShutdownTimeout(
+        task(),
+        SHUTDOWN_STEP_TIMEOUT_MS,
+        `${label} shutdown`,
+      );
+    } catch (error) {
+      logger.error(
+        { label, err: error instanceof Error ? error : undefined },
+        "Error during shutdown step",
+      );
+    }
+  }
+
+  clearTimeout(forceExitTimer);
+  logger.info("Graceful shutdown complete");
+  process.exit(0);
+};
+
+process.on("SIGINT", () => {
+  void shutdown("SIGINT");
+});
+process.on("SIGTERM", () => {
+  void shutdown("SIGTERM");
+});
 
 const startServer = async () => {
   try {
     await connectDatabase();
 
     server.listen(Env.PORT, () => {
-      console.log(`Server running on port ${Env.PORT} in ${Env.NODE_ENV} mode`);
+      logger.info(
+        { port: Env.PORT, env: Env.NODE_ENV },
+        "Server started",
+      );
     });
   } catch (error) {
-    console.error("Failed to start server:", error);
+    logger.fatal({ err: error }, "Failed to start server");
     process.exit(1);
   }
 };
 
-startServer();
+void startServer();

@@ -6,6 +6,8 @@ export const ErrorCodes = {
   ERR_UNAUTHORIZED: "ERR_UNAUTHORIZED",
   ERR_FORBIDDEN: "ERR_FORBIDDEN",
   ERR_NOT_FOUND: "ERR_NOT_FOUND",
+  ERR_TOO_MANY_REQUESTS: "ERR_TOO_MANY_REQUESTS",
+  ERR_SERVICE_UNAVAILABLE: "ERR_SERVICE_UNAVAILABLE",
 } as const;
 
 export type ErrorCodeType = keyof typeof ErrorCodes;
@@ -42,5 +44,11 @@ export class BadRequestException extends AppError {
 export class UnauthorizedException extends AppError {
   constructor(message = "Unauthorized Access") {
     super(message, HTTPSTATUS.UNAUTHORIZED, ErrorCodes.ERR_UNAUTHORIZED);
+  }
+}
+
+export class ForbiddenException extends AppError {
+  constructor(message = "Forbidden") {
+    super(message, HTTPSTATUS.FORBIDDEN, ErrorCodes.ERR_FORBIDDEN);
   }
 }
