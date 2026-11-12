@@ -15,7 +15,10 @@ export interface MessageDocument extends Document {
   mediaUrl?: string;
   messageType: MessageType;
   replyTo?: mongoose.Types.ObjectId | null;
-  isRead: boolean | null;
+  editedAt?: Date | null;
+  isPinned: boolean;
+  pinnedBy?: mongoose.Types.ObjectId | null;
+  pinnedAt?: Date | null;
   isDeleted: boolean;
   createdAt: Date;
   updatedAt: Date;
@@ -55,8 +58,21 @@ const messageSchema = new Schema<MessageDocument>(
       ref: "Message",
       default: null,
     },
-    isRead: {
+    editedAt: {
+      type: Date,
+      default: null,
+    },
+    isPinned: {
       type: Boolean,
+      default: false,
+    },
+    pinnedBy: {
+      type: Schema.Types.ObjectId,
+      ref: "User",
+      default: null,
+    },
+    pinnedAt: {
+      type: Date,
       default: null,
     },
     isDeleted: {
@@ -88,7 +104,11 @@ messageSchema.pre("validate", function () {
 // Core query: paginate messages in a chat by time
 messageSchema.index({ chatId: 1, isDeleted: 1, createdAt: -1, replyTo: 1 });
 // For unread count queries: "how many messages in chat X haven't been read by user Y"
-messageSchema.index({ chatId: 1, sender: 1 });
+messageSchema.index({ chatId: 1, sender: 1, createdAt: -1 });
+// Pinned-message list per chat
+messageSchema.index({ chatId: 1, isPinned: 1, pinnedAt: -1 });
+// Message search (content only; media messages have no searchable text)
+messageSchema.index({ content: "text" });
 
 const MessageModel = mongoose.model<MessageDocument>("Message", messageSchema);
 export default MessageModel;

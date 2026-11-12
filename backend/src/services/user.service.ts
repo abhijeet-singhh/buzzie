@@ -1,5 +1,7 @@
+import mongoose from "mongoose";
 import UserModel from "../models/user.model";
 import { NotFoundException } from "../utils/app-error";
+import { getUserOnlineStatuses } from "../lib/presence";
 
 type GetUsersParams = {
   currentUserId: string;
@@ -27,7 +29,7 @@ export const getUsersService = async ({
   limit = 20,
 }: GetUsersParams) => {
   const query: any = {
-    _id: { $ne: currentUserId },
+    _id: { $ne: new mongoose.Types.ObjectId(currentUserId) },
   };
 
   // Search support (for chat user selection)
@@ -54,5 +56,47 @@ export const getUsersService = async ({
       total,
       totalPages: Math.ceil(total / limit),
     },
+  };
+};
+
+export const updateUserProfileService = async (
+  userId: string,
+  body: { name?: string; avatar?: string | null },
+) => {
+  const update: { name?: string; avatar?: string | null } = {};
+
+  if (body.name !== undefined) update.name = body.name;
+  if (body.avatar !== undefined) update.avatar = body.avatar;
+
+  const user = await UserModel.findByIdAndUpdate(userId, update, {
+    returnDocument: "after",
+    runValidators: true,
+  })
+    .select("name email avatar isOnline lastSeen createdAt")
+    .lean();
+
+  if (!user) throw new NotFoundException("User not found");
+
+  return user;
+};
+
+export const getUsersPresenceService = async (userIds: string[]) => {
+  const userObjectIds = userIds.map((id) => new mongoose.Types.ObjectId(id));
+  const [users, onlineStatuses] = await Promise.all([
+    UserModel.find({ _id: { $in: userObjectIds } })
+      .select("_id isOnline lastSeen")
+      .lean(),
+    getUserOnlineStatuses(userIds),
+  ]);
+
+  return {
+    presences: users.map((user) => {
+      const userId = user._id.toString();
+      return {
+        userId,
+        isOnline: onlineStatuses.get(userId) ?? user.isOnline,
+        lastSeen: user.lastSeen,
+      };
+    }),
   };
 };
