@@ -9,6 +9,7 @@ export interface ChatDocument extends Document {
     lastReadAt: Date;
   }[];
   isGroup: boolean;
+  directKey?: string | null;
   groupName?: string | null;
   groupAvatar?: string | null;
   admins?: mongoose.Types.ObjectId[];
@@ -55,6 +56,10 @@ const chatSchema = new Schema<ChatDocument>(
     isGroup: {
       type: Boolean,
       default: false,
+    },
+    directKey: {
+      type: String,
+      trim: true,
     },
     groupName: {
       type: String,
@@ -115,10 +120,8 @@ chatSchema.pre("save", function () {
 
 chatSchema.index({ participants: 1, lastMessageAt: -1 });
 
-chatSchema.index(
-  { participants: 1 },
-  { unique: true, partialFilterExpression: { isGroup: false } },
-);
+// Uniquely identifies a 1:1 pair without multikey-uniqueness pitfalls
+chatSchema.index({ directKey: 1 }, { unique: true, sparse: true });
 // helps when - filtering group chats seperately and admin dashboards
 chatSchema.index({ isGroup: 1, updatedAt: -1 });
 

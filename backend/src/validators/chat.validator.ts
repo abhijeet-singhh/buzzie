@@ -1,16 +1,17 @@
 import { z } from "zod";
+import { objectIdSchema, paginationQuerySchema } from "./common.validator";
 
 // 1-to-1 chat
 const singleChatSchema = z.object({
   isGroup: z.literal(false).optional(),
-  participantId: z.string().trim().min(1),
+  participantId: objectIdSchema,
 });
 
 // Group chat
 const groupChatSchema = z.object({
   isGroup: z.literal(true),
   participants: z
-    .array(z.string().trim().min(1))
+    .array(objectIdSchema)
     .min(2, "Group must have at least 2 participants")
     .refine(
       (arr) => new Set(arr).size === arr.length,
@@ -23,11 +24,11 @@ const groupChatSchema = z.object({
 export const createChatSchema = z.union([singleChatSchema, groupChatSchema]);
 
 export const chatIdSchema = z.object({
-  id: z.string().trim().min(1),
+  id: objectIdSchema,
 });
 
 export const memberActionBodySchema = z.object({
-  userId: z.string().trim().min(1),
+  userId: objectIdSchema,
 });
 
 export const updateGroupNameBodySchema = z.object({
@@ -37,3 +38,5 @@ export const updateGroupNameBodySchema = z.object({
 export const updateGroupAvatarBodySchema = z.object({
   groupAvatar: z.string().trim().min(1),
 });
+
+export const getChatsQuerySchema = paginationQuerySchema;

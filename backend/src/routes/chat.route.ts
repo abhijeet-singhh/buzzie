@@ -5,6 +5,7 @@ import {
   createChatController,
   getSingleChatController,
   getUserChatsController,
+  leaveGroupChatController,
   removeMemberController,
   updateGroupAvatarController,
   updateGroupNameController,
@@ -20,6 +21,7 @@ chatRoutes.get("/:id", getSingleChatController);
 
 chatRoutes.patch("/:id/members/add", addMemberController);
 chatRoutes.patch("/:id/members/remove", removeMemberController);
+chatRoutes.delete("/:id/members/me", leaveGroupChatController);
 chatRoutes.patch("/:id/group-name", updateGroupNameController);
 chatRoutes.patch("/:id/group-avatar", updateGroupAvatarController);
 

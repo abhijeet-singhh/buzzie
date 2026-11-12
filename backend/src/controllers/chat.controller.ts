@@ -4,6 +4,7 @@ import { HTTPSTATUS } from "../config/http.config";
 import {
   chatIdSchema,
   createChatSchema,
+  getChatsQuerySchema,
   memberActionBodySchema,
   updateGroupAvatarBodySchema,
   updateGroupNameBodySchema,
@@ -13,11 +14,13 @@ import {
   createChatService,
   getSingleChatService,
   getUserChatsService,
+  leaveGroupChatService,
   removeMemberFromGroupService,
   updateGroupAvatarService,
   updateGroupNameService,
 } from "../services/chat.service";
 import { UnauthorizedException } from "../utils/app-error";
+import { validate } from "../utils/validate";
 
 export const createChatController = asyncHandler(
   async (req: Request, res: Response) => {
@@ -29,7 +32,7 @@ export const createChatController = asyncHandler(
 
     const userIdStr = userId.toString();
 
-    const body = createChatSchema.parse(req.body);
+    const body = validate(createChatSchema, req.body);
 
     const chat = await createChatService(userIdStr, body);
 
@@ -49,12 +52,14 @@ export const getUserChatsController = asyncHandler(
     }
 
     const userIdStr = userId.toString();
+    const query = validate(getChatsQuerySchema, req.query);
 
-    const chats = await getUserChatsService(userIdStr);
+    const { chats, pagination } = await getUserChatsService(userIdStr, query);
 
     return res.status(HTTPSTATUS.OK).json({
       message: "Chats retrieved successfully",
       chats,
+      pagination,
     });
   },
 );
@@ -69,7 +74,7 @@ export const getSingleChatController = asyncHandler(
 
     const userIdStr = userId.toString();
 
-    const { id } = chatIdSchema.parse(req.params);
+    const { id } = validate(chatIdSchema, req.params);
 
     const { chat, messages } = await getSingleChatService(id, userIdStr);
 
@@ -86,8 +91,8 @@ export const addMemberController = asyncHandler(
     const userId = req.user?._id;
     if (!userId) throw new UnauthorizedException("User not authenticated");
 
-    const { id } = chatIdSchema.parse(req.params);
-    const { userId: targetUserId } = memberActionBodySchema.parse(req.body);
+    const { id } = validate(chatIdSchema, req.params);
+    const { userId: targetUserId } = validate(memberActionBodySchema, req.body);
 
     const chat = await addMemberToGroupService(
       id,
@@ -107,8 +112,8 @@ export const removeMemberController = asyncHandler(
     const userId = req.user?._id;
     if (!userId) throw new UnauthorizedException("User not authenticated");
 
-    const { id } = chatIdSchema.parse(req.params);
-    const { userId: targetUserId } = memberActionBodySchema.parse(req.body);
+    const { id } = validate(chatIdSchema, req.params);
+    const { userId: targetUserId } = validate(memberActionBodySchema, req.body);
 
     const chat = await removeMemberFromGroupService(
       id,
@@ -128,8 +133,8 @@ export const updateGroupNameController = asyncHandler(
     const userId = req.user?._id;
     if (!userId) throw new UnauthorizedException("User not authenticated");
 
-    const { id } = chatIdSchema.parse(req.params);
-    const { groupName } = updateGroupNameBodySchema.parse(req.body);
+    const { id } = validate(chatIdSchema, req.params);
+    const { groupName } = validate(updateGroupNameBodySchema, req.body);
 
     const chat = await updateGroupNameService(id, userId.toString(), groupName);
 
@@ -145,8 +150,8 @@ export const updateGroupAvatarController = asyncHandler(
     const userId = req.user?._id;
     if (!userId) throw new UnauthorizedException("User not authenticated");
 
-    const { id } = chatIdSchema.parse(req.params);
-    const { groupAvatar } = updateGroupAvatarBodySchema.parse(req.body);
+    const { id } = validate(chatIdSchema, req.params);
+    const { groupAvatar } = validate(updateGroupAvatarBodySchema, req.body);
 
     const chat = await updateGroupAvatarService(
       id,
@@ -157,6 +162,21 @@ export const updateGroupAvatarController = asyncHandler(
     return res.status(HTTPSTATUS.OK).json({
       message: "Group avatar updated successfully",
       chat,
+    });
+  },
+);
+
+export const leaveGroupChatController = asyncHandler(
+  async (req: Request, res: Response) => {
+    const userId = req.user?._id;
+    if (!userId) throw new UnauthorizedException("User not authenticated");
+
+    const { id } = validate(chatIdSchema, req.params);
+
+    await leaveGroupChatService(id, userId.toString());
+
+    return res.status(HTTPSTATUS.OK).json({
+      message: "You left the group chat",
     });
   },
 );
